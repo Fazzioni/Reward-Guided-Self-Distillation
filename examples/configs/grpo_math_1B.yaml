@@ -1,7 +1,7 @@
 # GRPO Algorithm Configuration
 grpo:
-  num_prompts_per_step: 32
-  num_generations_per_prompt: 16
+  num_prompts_per_step: 2
+  num_generations_per_prompt: 2
   max_rollout_turns: 1 # for multi-turn rollouts. Math Environments just have 1 turn (answering the question)
   max_num_epochs: 1
   max_num_steps: 1000000
@@ -37,7 +37,8 @@ grpo:
   # Advantage Estimator Configuration
   # Options: "grpo" (default) or "reinforce_plus_plus"
   adv_estimator:
-    name: "grpo"  # Use "reinforce_plus_plus" for Reinforce++ estimator
+    #name: "grpo"  # Use "reinforce_plus_plus" for Reinforce++ estimator
+    name: "reward_guided_self_distillation"  # Use "reinforce_plus_plus" for Reinforce++ estimator
     normalize_rewards: ${grpo.normalize_rewards}
     use_leave_one_out_baseline: ${grpo.use_leave_one_out_baseline}
     minus_baseline: true  # Reinforce++-baseline specific: subtract per-prompt mean baseline
@@ -131,18 +132,18 @@ checkpointing:
   save_data_plane: false
 
 policy:
-  model_name: "Qwen/Qwen2.5-1.5B"
+  model_name: "Qwen/Qwen3-0.6B"
   tokenizer:
     name: ${policy.model_name} ## specify if you'd like to use a tokenizer different from the model's default
     chat_template_kwargs: null # can be used to pass kwargs to the chat template, e.g., enable_thinking=true
     tokenizer_kwargs: null # extra kwargs forwarded to tokenizer loading, e.g., {fix_mistral_regex: false}
     use_fastokens: false # opt-in Rust-backed BPE tokenizer for NeMo-RL tokenization; NRL_USE_FASTOKENS overrides this and also sets VLLM_USE_FASTOKENS.
   hf_config_overrides: {}
-  train_global_batch_size: 512
-  train_micro_batch_size: 4
+  train_global_batch_size: 2
+  train_micro_batch_size: 1
   generation_batch_size: 32 # Only used when generating using HF backend
   logprob_batch_size: ${policy.train_micro_batch_size}
-  max_total_sequence_length: 512
+  max_total_sequence_length: 768
   precision: "bfloat16"
   logprob_chunk_size: null
   offload_optimizer_for_logprob: false # Only useful for non-colocated generation since colocated generation will always offload optimizer to cuda before refit
@@ -178,156 +179,7 @@ policy:
       lora_A_init: "xavier"  # Initialization method for LoRA A matrix: "xavier" or "uniform"
       use_triton: true  # Use Triton-optimized kernels for LoRA (faster but requires flash-attn). Disable when tensor_parallel_size > 1
       restore_from: null  # Warm start: path to a PEFT adapter checkpoint (adapter_model.safetensors + adapter_config.json) to initialize this run's LoRA weights from, e.g. a previous SFT run's step_*/policy/weights
-  
-  megatron_cfg:
-    enabled: false
-    # Arbitrary overrides applied recursively to the Megatron Bridge model
-    # provider before model instantiation. Do not duplicate first-class fields.
-    model_overrides: {}
-    checkpoint:
-      async_save: true
-      ckpt_assume_constant_structure: true
-    # Compute next-token logprobs directly from hidden states with a chunked
-    # linear cross-entropy fusion, avoiding materialization of the full
-    # [batch, seq_len, vocab_size] logit tensor. Reduces peak memory and extends
-    # the maximum trainable sequence length. Not compatible with context
-    # parallelism, sequence packing, or top-k/top-p training-time filtering.
-    use_fused_linear_logprobs: false
-    fused_linear_logprobs_chunk_size: 256
-    force_reconvert_from_hf: False # Set to True to force reconvert of the model from Hugging Face
-    empty_unused_memory_level: 1  # 1 is the minimum recommendation for RL since we almost always need to offload before beginning generation. Setting to 0 is faster, but you are more likely to run out of GPU memory.
-    activation_checkpointing: false
-    # Training CUDA Graph settings; modules and warmup are inactive with impl "none".
-    cuda_graph_impl: "none"
-    cuda_graph_modules: []
-    cuda_graph_warmup_steps: 3
-    # Offload specific module activations to CPU. Works for both dense and MoE
-    # models and requires transformer_engine. Different from optimizer_cpu_offload,
-    # which offloads optimizer states. On TE >= 2.10,
-    # also set megatron_cfg.env_vars.NVTE_CPU_OFFLOAD_V1: "1".
-    fine_grained_activation_offloading: false
-    # Modules to offload when fine_grained_activation_offloading is true.
-    # Common examples: ["core_attn", "attn_proj", "expert_fc1", "moe_act"].
-    # Supported names depend on the pinned Megatron-LM version and are
-    # validated by MCore. "attn_proj" requires "core_attn". See the latest
-    # upstream module reference:
-    # https://github.com/NVIDIA/Megatron-LM/blob/main/docs/user-guide/features/fine_grained_activation_offloading.md#offloadable-modules
-    offload_modules: null
-    # recompute_granularity controls activation checkpointing depth.
-    # "full": recompute all activations (default, max memory savings).
-    # "selective": recompute only specific modules (see recompute_modules).
-    # Only takes effect when activation_checkpointing: true.
-    recompute_granularity: "full"
-    # Modules to selectively recompute when recompute_granularity="selective".
-    # MCore options: ["core_attn", "moe_act", "layernorm", "mla_up_proj", "mlp", "moe", "shared_experts"].
-    # Null defaults to ["core_attn"]. Full list and per-module constraints:
-    # https://github.com/NVIDIA/Megatron-LM/blob/d30c3ae5469fe3f6a64d4fd2e63b6e7f7844ea81/megatron/core/transformer/transformer_config.py#L483
-    # Use ["moe"] for MoE models to recompute expert activations only.
-    recompute_modules: null
-    tensor_model_parallel_size: 1
-    expert_tensor_parallel_size: 1
-    expert_model_parallel_size: 1
-    pipeline_model_parallel_size: 1
-    num_layers_in_first_pipeline_stage: null
-    num_layers_in_last_pipeline_stage: null
-    context_parallel_size: 1
-    pipeline_dtype: ${policy.precision}
-    sequence_parallel: false
-    freeze_moe_router: true
-    moe_router_dtype: "fp64"
-    moe_router_load_balancing_type: "none" # "seq_aux_loss" causes logprob error divergence for grpo
-    moe_router_bias_update_rate: 0.0 # by default, disable bias updates for grpo
-    moe_permute_fusion: true
-    # gives ~20% training perf speedup with sequence packing
-    apply_rope_fusion: True
-    # gives ~25% training perf speedup with sequence packing and apply_rope_fusion
-    bias_activation_fusion: True
-    defer_fp32_logits: False
-    moe_per_layer_logging: False
-    moe_enable_deepep: false
-    moe_token_dispatcher_type: "alltoall"
-    # For HybridEP sequence packing with PP=1 and MTP disabled, set true to align
-    # uneven rank-local inputs before forward and avoid collective-order hangs.
-    moe_hybridep_prepad_packed_inputs: false
-    moe_shared_expert_overlap: false
-    use_gloo_process_groups: false
-    # Multi-Token Prediction (MTP). mtp_num_layers=0 disables MTP.
-    mtp_num_layers: 0
-    # MTP loss weight added to the main next-token loss (0.0 disables the MTP loss contribution).
-    mtp_loss_scaling_factor: 0.0
-    # When true, repeat one MTP layer mtp_num_layers times instead of using distinct layers.
-    mtp_use_repeated_layer: false
-    # When true, detach MTP heads so MTP loss does not affect main-model gradients.
-    mtp_detach_heads: false
-    gradient_accumulation_fusion: false
-    use_fused_weighted_squared_relu: false
-
-    peft:
-      enabled: false
-      target_modules: []
-      exclude_modules: []
-      dim: 8
-      alpha: 32
-      dropout: 0.0
-      dropout_position: "post"
-      lora_A_init_method: "xavier"
-      lora_B_init_method: "zero"
-      a2a_experimental: false
-      lora_dtype: None
-      restore_from: null  # Warm start: path to a native Megatron PEFT checkpoint (iter_XXXXXXX dir or its root) to initialize this run's LoRA weights from, e.g. a previous SFT run
-
-    optimizer:
-      optimizer: "adam"
-      lr: 5.0e-6
-      min_lr: 5.0e-7
-      weight_decay: 0.01
-      bf16: true
-      fp16: false
-      params_dtype: "float32"
-
-      #adam
-      adam_beta1: 0.9
-      adam_beta2: 0.999
-      adam_eps: 1e-8
-
-      #sgd
-      sgd_momentum: 0.9
-
-      #distributed optimizer
-      use_distributed_optimizer: true
-      use_precision_aware_optimizer: true
-
-      clip_grad: ${policy.max_grad_norm}
-
-      # optimizer cpu offload
-      optimizer_cpu_offload: false
-      optimizer_offload_fraction: 0.0
-      overlap_cpu_optimizer_d2h_h2d: false
-
-    scheduler:
-      start_weight_decay: ${policy.megatron_cfg.optimizer.weight_decay}
-      end_weight_decay: ${policy.megatron_cfg.optimizer.weight_decay}
-      weight_decay_incr_style: "constant"
-      lr_decay_style: "constant"
-      lr_decay_iters: 1000
-      lr_warmup_iters: 13
-      lr_warmup_init: 5.0e-7
-
-    distributed_data_parallel_config:
-      grad_reduce_in_fp32: false
-      overlap_grad_reduce: true
-      overlap_param_gather: true
-      use_custom_fsdp: false
-      data_parallel_sharding_strategy: "optim_grads_params"
-
-    fp8_cfg: 
-      enabled: false
-      fp8: "e4m3"
-      fp8_recipe: "blockwise"
-      fp8_param: false
-
-    env_vars: null
-
+ 
   draft:
     # Draft co-training speculator. Currently only eagle3 is supported.
     speculator_type: eagle3
@@ -456,7 +308,7 @@ policy:
       tensor_parallel_size: 1
       pipeline_parallel_size: 1
       expert_parallel_size: 1  # When EP > 1, EP must be a multiple of TP since vLLM's EP = DP * TP
-      gpu_memory_utilization: 0.6
+      gpu_memory_utilization: 0.3
       max_model_len: ${policy.max_total_sequence_length}
       # when enforce_eager is False, it is optional to set ++policy.generation.vllm_kwargs.compilation_config.backend=eager for better accuracy,
       # with the flag, vllm will use the custom CUDA kernels instead of the Triton kernels generated by torch.compile
@@ -485,7 +337,7 @@ policy:
 data:
   max_input_seq_length: ${policy.max_total_sequence_length} # upper bound, real truncation occurs at vllm.max_model_len
   shuffle: true
-  num_workers: 1
+  num_workers: 2
 
   # use multiple dataloader for train
   # see https://github.com/NVIDIA-NeMo/RL/blob/main/docs/guides/grpo.md#multiple-dataloaders for more details.
@@ -528,7 +380,7 @@ data:
 
 env:
   math:
-    num_workers: 8
+    num_workers: 2
     math_verify_impl: "hf_math_verify"
 
 logger:

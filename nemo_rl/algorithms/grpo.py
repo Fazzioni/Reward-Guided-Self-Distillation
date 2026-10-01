@@ -36,6 +36,7 @@ from nemo_rl.algorithms.advantage_estimator import (
     GRPOAdvantageEstimator,
     OPDAdvantageEstimator,
     ReinforcePlusPlusAdvantageEstimator,
+    RewardGuidedSelfDistillationAdvantageEstimator
 )
 from nemo_rl.algorithms.logits_sampling_utils import (
     TrainingSamplingParams,
@@ -2489,6 +2490,11 @@ def _create_advantage_estimator(master_config: MasterConfig):
             adv_estimator_config, loss_config
         )
         print("  ✓ Using Reinforce++ advantage estimator")
+    elif adv_estimator_name == "reward_guided_self_distillation":
+        adv_estimator = RewardGuidedSelfDistillationAdvantageEstimator(
+            adv_estimator_config, loss_config
+        )
+        print("  ✓ Using Reward-Guided Self-Distillation advantage estimator")
     else:
         raise ValueError(f"Invalid adv_estimator name: {adv_estimator_name}")
 
@@ -3487,6 +3493,46 @@ def _grpo_train_impl(
                         train_data["prev_logprobs"] = policy.get_logprobs(
                             logprob_data, timer=timer
                         )["logprobs"]
+                        
+                        
+                        if isinstance(adv_estimator, RewardGuidedSelfDistillationAdvantageEstimator):  # Replace SomeExpectedClass with the actual class name
+                            new_train_data = adv_estimator.remove_hint(tokenizer, train_data.get_dict())
+                            
+                            # calcula os logits sem a dica
+                            train_data["prev_logprobs_wo_hint"] = policy.get_logprobs(BatchedDataDict[ClippedPGLossDataDict](
+                                                    {
+                                                        "input_ids": new_train_data["input_ids"],
+                                                        "input_lengths": new_train_data["input_lengths"],
+                                                        "generation_logprobs": new_train_data["generation_logprobs"],
+                                                        "token_mask": new_train_data["token_mask"],
+                                                        "sample_mask": new_train_data["sample_mask"],
+                                                    }
+                                                ), timer=timer)["logprobs"]
+                            train_data["prev_logprobs_wo_hint_mask"] = new_train_data['token_mask']
+                            
+                            # calculate the KL divergence between the reference and the without-hint distributions
+                            #train_data['kl_hint'] = adv_estimator.get_kl_hint(train_data)
+                           
+                           
+                            
+                            #
+                            #with open("train_data.json", "w") as f: 
+                            #    dict_train_data = train_data.get_dict()
+                            #    print("itens:", dict_train_data.keys())
+                            #    # how serialize train_data to JSON?
+                            #    for key in list(dict_train_data.keys()):
+                            #        dict_train_data[key] = dict_train_data[key].tolist() if hasattr(dict_train_data[key], "tolist") else dict_train_data[key]
+                            #        if isinstance(dict_train_data[key], list):
+                            #            for idx in range(len(dict_train_data[key])):
+                            #                if isinstance(dict_train_data[key][idx], dict):
+                            #                    for subkey in list(dict_train_data[key][idx].keys()):
+                            #                        dict_train_data[key][idx][subkey] = dict_train_data[key][idx][subkey].tolist() if hasattr(dict_train_data[key][idx][subkey], "tolist") else dict_train_data[key][idx][subkey]
+                            #    
+                            #    
+                            #    print(dict_train_data['hint_information'])
+                            #    json.dump(dict_train_data, f)
+                        
+                        
                     else:
                         print(
                             "▶ Skipping prev_logprobs (force_on_policy_ratio=True)...",
@@ -3553,6 +3599,12 @@ def _grpo_train_impl(
                         repeated_batch=repeated_batch,
                         logprobs_policy=train_data["prev_logprobs"],
                         logprobs_reference=train_data.get("reference_policy_logprobs"),
+                        
+                        # logprobs without hint for reward-guided self-distillation
+                        prev_logprobs_wo_hint = train_data.get("prev_logprobs_wo_hint"),
+                        prev_logprobs_wo_hint_mask = train_data.get("prev_logprobs_wo_hint_mask"),
+                        
+
                     )
                     del prompt_ids_for_adv
 

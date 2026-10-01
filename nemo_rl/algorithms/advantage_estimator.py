@@ -52,7 +52,7 @@ from nemo_rl.algorithms.utils import (
 class AdvEstimatorConfig(BaseModel, extra="allow"):
     """Configuration for advantage estimator (GRPO, GDPO, OPD, or Reinforce++)."""
 
-    name: Literal["grpo", "gdpo", "opd", "reinforce_plus_plus"] = "grpo"
+    name: Literal["grpo", "gdpo", "opd", "reinforce_plus_plus", "reward_guided_self_distillation"] = "grpo"
     # GRPO specific
     normalize_rewards: bool = True
     use_leave_one_out_baseline: bool = True
@@ -666,4 +666,135 @@ class OPDAdvantageEstimator:
             "on_policy_distillation/teacher_student_logprob_gap_mean": distill_mean,
             "on_policy_distillation/adv_mean": adv_mean,
             "on_policy_distillation/adv_std": adv_std,
+        }
+
+
+
+class RewardGuidedSelfDistillationAdvantageEstimator:
+    """Reward-Guided Self-Distillation advantage estimator.
+
+    
+    The loss function should be configured with:
+        disable_ppo_ratio: true               (REINFORCE, no PPO ratio)
+        use_importance_sampling_correction: true
+        truncated_importance_sampling_type: icepop
+        truncated_importance_sampling_ratio_min: <eps_low>
+        truncated_importance_sampling_ratio: <eps_high>
+
+    Required kwargs in compute_advantage:
+        teacher_logprobs: [B, S] log probabilities with hint
+        prev_logprobs: [B, S] student training, but without hint
+    """
+
+    def __init__(self, estimator_config: dict, loss_config: dict):
+        self.last_metrics: dict[str, float] = {}
+        self.kl_coef = 1
+        
+        
+    def remove_hint(self, tokenizer, train_data):
+        """
+
+
+        """
+        
+        pad_token_id = tokenizer.pad_token_id
+        seq_start = tokenizer("Think step-by-step to solve", return_tensors='pt')['input_ids']
+        seq_end   = tokenizer(" tags.:\n", return_tensors='pt')['input_ids']
+        
+        new_train_data = {k: v.clone() if hasattr(v, 'clone') else v.copy() if hasattr(v, 'copy') else v for k, v in train_data.items()}
+    
+        new_train_data['hint_information'] = []
+        
+
+        for i in range(len(new_train_data['input_ids'])):
+            input_ids = new_train_data['input_ids'][i]
+            token_mask = new_train_data['token_mask'][i]
+            
+            start_index = (input_ids.unfold(0, seq_start.size(-1), 1) == seq_start).all(dim=1).nonzero(as_tuple=True)[0]
+            end_index   = (input_ids.unfold(0, seq_end.size(-1), 1) == seq_end).all(dim=1).nonzero(as_tuple=True)[0]
+
+            assert start_index.numel() != 0 and end_index.numel() != 0, "Start or end sequence not found in input_ids"
+            
+            end_idx = end_index[0]+seq_end.size(-1)
+            tokens_removidos = end_idx - start_index[0]
+
+            new_train_data['hint_information'].append({
+                'start_index': start_index[0].item(),
+                'count': tokens_removidos.item(),
+                'tokens': input_ids[start_index[0]:end_idx]
+            })
+
+            # remove a sequencia de tokens entre start_index e end_index e adiciona padding no final
+            new_train_data['input_ids'][i] = torch.cat([input_ids[:start_index[0]], input_ids[end_idx:], torch.full((tokens_removidos,), pad_token_id, dtype=input_ids.dtype)])
+
+            # corrige a máscara de atenção correspondente
+            new_train_data['token_mask'][i] = torch.cat([token_mask[:start_index[0]], token_mask[end_idx:], torch.full((tokens_removidos,), 0, dtype=token_mask.dtype)])
+            
+        return new_train_data
+
+
+
+    def compute_advantage(
+        self,
+        prompt_ids,
+        rewards,
+        mask,
+        logprobs_policy=None,
+        prev_logprobs_wo_hint=None,
+        prev_logprobs_wo_hint_mask=None,
+        **kwargs,
+    ):
+        """Compute OPD distillation advantages.
+
+        Args:
+            prompt_ids: [B] prompt IDs (unused, kept for interface compatibility)
+            rewards: [B] rewards (unused for pure distillation)
+            mask: [B, S] token mask
+            prev_logprobs_wo_hint: [B, S] student logprobs without hint (required)
+            prev_logprobs_wo_hint_mask: [B, S] mask for student logprobs without hint (required)
+            prev_logprobs: [B, S] 
+
+        Returns:
+            [B, S] token-level distillation advantages (stop-gradient)
+        """
+        
+        assert logprobs_policy is not None, "Reward-Guided Self-Distillation requires prev_logprobs"
+        assert prev_logprobs_wo_hint is not None, "Reward-Guided Self-Distillation requires prev_logprobs_wo_hint"
+        assert prev_logprobs_wo_hint_mask is not None, "Reward-Guided Self-Distillation requires prev_logprobs_wo_hint_mask"
+
+        log_prob_advantages = logprobs_policy.detach().clone()
+        rewards_adv = torch.ones_like(log_prob_advantages) * rewards.unsqueeze(1)
+        
+        for i in range(len(logprobs_policy)):
+            log_prob_advantages[i][mask[i].bool()] -= prev_logprobs_wo_hint[i][prev_logprobs_wo_hint_mask[i].bool()]
+        
+        advantages = (log_prob_advantages * self.kl_coef) + rewards_adv
+        advantages = advantages * mask
+        
+        self._compute_metrics(log_prob_advantages, advantages, mask)
+
+        return advantages
+
+    def _compute_metrics(self, lop_prob_advantages, advantages, mask):
+        """Compute Self-Guided Distillation logging metrics"""
+        valid_bool = mask.bool()
+        distill_valid = torch.masked_select(lop_prob_advantages, valid_bool)
+        adv_valid = torch.masked_select(advantages, valid_bool)
+
+        
+        distill_mean = distill_valid.mean().item() if distill_valid.numel() > 0 else 0.0
+        distill_std = distill_valid.std().item() if distill_valid.numel() > 1 else 0.0
+        distill_min = distill_valid.min().item() if distill_valid.numel() > 0 else 0.0
+        distill_max = distill_valid.max().item() if distill_valid.numel() > 0 else 0.0
+        
+        adv_mean = adv_valid.mean().item() if adv_valid.numel() > 0 else 0.0
+        adv_std = adv_valid.std().item() if adv_valid.numel() > 1 else 0.0
+
+        self.last_metrics = {
+            "self_guided_distillation/logprob_gap_mean": distill_mean,
+            "self_guided_distillation/logprob_gap_std": distill_std,
+            "self_guided_distillation/logprob_gap_min": distill_min,
+            "self_guided_distillation/logprob_gap_max": distill_max,
+            "self_guided_distillation/adv_mean": adv_mean,
+            "self_guided_distillation/adv_std": adv_std,
         }
