@@ -688,18 +688,29 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
 
     def __init__(self, estimator_config: dict, loss_config: dict):
         self.last_metrics: dict[str, float] = {}
-        self.kl_coef = 1
-        
-        
+        self.kl_coef = estimator_config.kl_coef
+        self.kl_clip_min = estimator_config.kl_clip_min
+        self.kl_clip_max = estimator_config.kl_clip_max
+        self.hint_start_string = estimator_config.hint_start_string
+        self.hint_end_string = estimator_config.hint_end_string
+        self.hint_as_improvement = estimator_config.hint_as_improvement
+    
+    
+    def format_hint(self, tokenizer, train_data, extra_env_info):
+        if self.hint_as_improvement:
+            return self.remove_hint(tokenizer, train_data)
+        else:
+            # hint in extra_env_info
+            raise NotImplementedError("format_hint is not implemented for hint_as_improvement=False")
+    
+    
     def remove_hint(self, tokenizer, train_data):
         """
 
-
         """
-        
         pad_token_id = tokenizer.pad_token_id
-        seq_start = tokenizer("Think step-by-step to solve", return_tensors='pt')['input_ids']
-        seq_end   = tokenizer(" tags.:\n", return_tensors='pt')['input_ids']
+        seq_start = tokenizer(self.hint_start_string, return_tensors='pt', add_special_tokens=False)['input_ids']
+        seq_end   = tokenizer(self.hint_end_string, return_tensors='pt', add_special_tokens=False)['input_ids']
         
         new_train_data = {k: v.clone() if hasattr(v, 'clone') else v.copy() if hasattr(v, 'copy') else v for k, v in train_data.items()}
     
@@ -708,12 +719,14 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
 
         for i in range(len(new_train_data['input_ids'])):
             input_ids = new_train_data['input_ids'][i]
+            #print(tokenizer.batch_decode(input_ids))
             token_mask = new_train_data['token_mask'][i]
             
             start_index = (input_ids.unfold(0, seq_start.size(-1), 1) == seq_start).all(dim=1).nonzero(as_tuple=True)[0]
             end_index   = (input_ids.unfold(0, seq_end.size(-1), 1) == seq_end).all(dim=1).nonzero(as_tuple=True)[0]
 
-            assert start_index.numel() != 0 and end_index.numel() != 0, "Start or end sequence not found in input_ids"
+
+            assert start_index.numel() != 0 and end_index.numel() != 0, f"Start or end sequence not found in input_ids {tokenizer.batch_decode(input_ids)}"
             
             end_idx = end_index[0]+seq_end.size(-1)
             tokens_removidos = end_idx - start_index[0]
@@ -765,20 +778,22 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         log_prob_advantages = logprobs_policy.detach().clone()
         rewards_adv = torch.ones_like(log_prob_advantages) * rewards.unsqueeze(1)
         
+        
+        # calculate log_prob_advantages by subtracting the student logprobs without hint from the policy logprobs
         for i in range(len(logprobs_policy)):
             log_prob_advantages[i][mask[i].bool()] -= prev_logprobs_wo_hint[i][prev_logprobs_wo_hint_mask[i].bool()]
         
-        advantages = (log_prob_advantages * self.kl_coef) + rewards_adv
+        advantages = (log_prob_advantages.clamp(min=self.kl_clip_min, max=self.kl_clip_max) * self.kl_coef) + rewards_adv
         advantages = advantages * mask
         
         self._compute_metrics(log_prob_advantages, advantages, mask)
 
         return advantages
 
-    def _compute_metrics(self, lop_prob_advantages, advantages, mask):
+    def _compute_metrics(self, log_prob_advantages, advantages, mask):
         """Compute Self-Guided Distillation logging metrics"""
         valid_bool = mask.bool()
-        distill_valid = torch.masked_select(lop_prob_advantages, valid_bool)
+        distill_valid = torch.masked_select(log_prob_advantages, valid_bool)
         adv_valid = torch.masked_select(advantages, valid_bool)
 
         

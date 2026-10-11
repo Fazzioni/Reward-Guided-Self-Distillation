@@ -3495,9 +3495,12 @@ def _grpo_train_impl(
                         )["logprobs"]
                         
                         
+                        # TODO: trazer o hint
                         if isinstance(adv_estimator, RewardGuidedSelfDistillationAdvantageEstimator):  # Replace SomeExpectedClass with the actual class name
-                            new_train_data = adv_estimator.remove_hint(tokenizer, train_data.get_dict())
                             
+                            # Ou remove o hint
+                            new_train_data = adv_estimator.format_hint(tokenizer, train_data.get_dict(), repeated_batch["extra_env_info"])
+
                             # calcula os logits sem a dica
                             train_data["prev_logprobs_wo_hint"] = policy.get_logprobs(BatchedDataDict[ClippedPGLossDataDict](
                                                     {

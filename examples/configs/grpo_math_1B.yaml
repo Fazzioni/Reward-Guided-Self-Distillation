@@ -337,7 +337,7 @@ policy:
 data:
   max_input_seq_length: ${policy.max_total_sequence_length} # upper bound, real truncation occurs at vllm.max_model_len
   shuffle: true
-  num_workers: 2
+  num_workers: 1
 
   # use multiple dataloader for train
   # see https://github.com/NVIDIA-NeMo/RL/blob/main/docs/guides/grpo.md#multiple-dataloaders for more details.
@@ -380,7 +380,7 @@ data:
 
 env:
   math:
-    num_workers: 2
+    num_workers: 1
     math_verify_impl: "hf_math_verify"
 
 logger:

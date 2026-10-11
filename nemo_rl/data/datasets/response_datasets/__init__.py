@@ -49,6 +49,8 @@ from nemo_rl.data.datasets.response_datasets.oasst import OasstDataset
 from nemo_rl.data.datasets.response_datasets.openmathinstruct2 import (
     OpenMathInstruct2Dataset,
 )
+from nemo_rl.data.datasets.response_datasets.LeetCodeExecute import LeetCodeExecuteDataset
+
 from nemo_rl.data.datasets.response_datasets.openr1_math import OpenR1Math220KDataset
 from nemo_rl.data.datasets.response_datasets.refcoco import RefCOCODataset
 from nemo_rl.data.datasets.response_datasets.response_dataset import ResponseDataset
@@ -92,6 +94,7 @@ DATASET_REGISTRY = {
     "openai_format": OpenAIFormatDataset,
     "NemoGymDataset": NemoGymDataset,
     "ResponseDataset": ResponseDataset,
+    "LeetCodeExecuteDataset": LeetCodeExecuteDataset,
 }
 
 

@@ -168,6 +168,92 @@ class HFVerifyWorker:
 
 
 @ray.remote  # pragma: no cover
+class LeetCodeAnswerVerifier:
+    def __init__(self) -> None:
+        logging.getLogger("math_verify").setLevel(logging.CRITICAL)
+
+        # Use Latex and plain math extraction from predictions
+        # https://github.com/huggingface/Math-Verify?tab=readme-ov-file#extraction-targets
+        #self.verify_func = math_metric(
+        #    gold_extraction_target=(LatexExtractionConfig(),),
+        #    pred_extraction_target=(ExprExtractionConfig(), LatexExtractionConfig())
+        #)
+
+
+    def parse_latex_resposta(self, texto):
+        match_boxed = re.search(r'\\boxed\{([^}]+)\}', texto)
+        if match_boxed:
+            return match_boxed.group(1).strip()
+        texto_limpo = re.sub(r'```latex\n?|```', '', texto).strip()
+        match_chaves = re.match(r'^\{([^}]+)\}$', texto_limpo)
+        if match_chaves:
+            return match_chaves.group(1).strip()
+        return texto_limpo
+
+
+    def test_solution(self, solution, ground_truth):
+        parsed = self.parse_latex_resposta(solution)
+        s1 = parsed.lower().strip()
+        s2 = str(ground_truth).lower().strip()
+        return s1 == s2
+
+
+    def verify(
+        self,
+        pred_responses: list[str],
+        ground_truths: list[str],
+        return_extracted_answer: bool = False,
+        **kwargs,
+    ) -> Union[list[float], tuple[list[float], list[str | None]]]:
+        """Verify the correctness of the predicted responses against the ground truth.
+
+        Args:
+            pred_responses: list[str]. The predicted responses from the LLM.
+            ground_truths: list[str]. The ground truth responses.
+
+        Returns:
+            Union[list[float], tuple[list[float], list[str | None]]].
+            If return_extracted_answer is False, returns only the scores.
+            If return_extracted_answer is True, returns (scores, extracted_answers).
+        """
+        results = []
+        extracted_answers: list[str | None] = []
+
+        for response, ground_truth in zip(pred_responses, ground_truths):
+            score: float = 0.0
+            extracted: str | None = None
+            try:
+                with _mute_output():
+                    ret_score = 1 if self.test_solution(response, ground_truth) else 0
+
+                score = float(ret_score)
+                
+
+            # It's possible to emit a TimeoutException and that wouldn't be caught since
+            # it actually subclasses from BaseException and math-verify itself does not
+            # to catch it.
+            except (Exception, TimeoutException):
+                score = 0.0
+            else:
+                # Outside the try on purpose: failing to record an answer must
+                # not retract a score the verifier already returned.
+                if return_extracted_answer:
+                    extracted = self.parse_latex_resposta(response)
+
+            # Exactly one score and one answer per sample, on every path: both
+            # are consumed positionally against the batch downstream.
+            results.append(score)
+            if return_extracted_answer:
+                extracted_answers.append(extracted)
+
+        if return_extracted_answer:
+            return results, extracted_answers
+        else:
+            return results
+        
+        
+
+@ray.remote  # pragma: no cover
 class MultilingualMultichoiceVerifyWorker:
     def verify(
         self,
@@ -451,6 +537,7 @@ class MathEnvironment(BaseMathEnvironment):
         "math": HFVerifyWorker,
         "english_multichoice": EnglishMultichoiceVerifyWorker,
         "multilingual_multichoice": MultilingualMultichoiceVerifyWorker,
+        "LeetCodeAnswerVerifier": LeetCodeAnswerVerifier,
     }
 
     def step(
