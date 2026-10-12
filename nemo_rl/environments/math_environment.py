@@ -193,8 +193,8 @@ class LeetCodeAnswerVerifier:
 
     def test_solution(self, solution, ground_truth):
         parsed = self.parse_latex_resposta(solution)
-        s1 = parsed.lower().strip()
-        s2 = str(ground_truth).lower().strip()
+        s1 = parsed.strip()
+        s2 = str(ground_truth).strip()
         
         print(f"Parsed solution: {parsed}", f"Ground truth: {ground_truth}", f"Comparison result: {s1 == s2}", flush=True)
         logging.info(f"Parsed solution: {parsed}, Ground truth: {ground_truth}, Comparison result: {s1 == s2}")

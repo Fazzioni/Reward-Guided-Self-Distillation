@@ -786,6 +786,7 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         
         # calculate log_prob_advantages by subtracting the student logprobs without hint from the policy logprobs
         for i in range(len(logprobs_policy)):
+            # logprob student with hint - logprob student without hint
             log_prob_advantages[i][mask[i].bool()] -= prev_logprobs_wo_hint[i][prev_logprobs_wo_hint_mask[i].bool()]
         
         advantages = (log_prob_advantages.clamp(min=self.kl_clip_min, max=self.kl_clip_max) * self.kl_coef) + rewards_adv
@@ -796,17 +797,21 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         return advantages
 
     def _compute_metrics(self, log_prob_advantages, advantages, mask):
-        """Compute Self-Guided Distillation logging metrics"""
+        """Compute Self-Guided Distillation logging metrics."""
         valid_bool = mask.bool()
         distill_valid = torch.masked_select(log_prob_advantages, valid_bool)
         adv_valid = torch.masked_select(advantages, valid_bool)
+        probability_ratio_valid = torch.exp(distill_valid)
 
-        
         distill_mean = distill_valid.mean().item() if distill_valid.numel() > 0 else 0.0
         distill_std = distill_valid.std().item() if distill_valid.numel() > 1 else 0.0
         distill_min = distill_valid.min().item() if distill_valid.numel() > 0 else 0.0
         distill_max = distill_valid.max().item() if distill_valid.numel() > 0 else 0.0
-        
+        probability_ratio_mean = probability_ratio_valid.mean().item() if probability_ratio_valid.numel() > 0 else 0.0
+        probability_ratio_std = probability_ratio_valid.std().item() if probability_ratio_valid.numel() > 1 else 0.0
+        probability_ratio_min = probability_ratio_valid.min().item() if probability_ratio_valid.numel() > 0 else 0.0
+        probability_ratio_max = probability_ratio_valid.max().item() if probability_ratio_valid.numel() > 0 else 0.0
+
         adv_mean = adv_valid.mean().item() if adv_valid.numel() > 0 else 0.0
         adv_std = adv_valid.std().item() if adv_valid.numel() > 1 else 0.0
 
@@ -815,6 +820,10 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
             "self_guided_distillation/logprob_gap_std": distill_std,
             "self_guided_distillation/logprob_gap_min": distill_min,
             "self_guided_distillation/logprob_gap_max": distill_max,
+            "self_guided_distillation/probability_ratio_mean": probability_ratio_mean,
+            "self_guided_distillation/probability_ratio_std": probability_ratio_std,
+            "self_guided_distillation/probability_ratio_min": probability_ratio_min,
+            "self_guided_distillation/probability_ratio_max": probability_ratio_max,
             "self_guided_distillation/adv_mean": adv_mean,
             "self_guided_distillation/adv_std": adv_std,
         }

@@ -7,14 +7,14 @@ grpo:
   max_num_steps: 1000000
   normalize_rewards: true
   use_leave_one_out_baseline: true
-  val_period: 0
+  val_period: 10
   val_start_at: -1  # First step eligible for periodic validation; -1 disables the delay
-  val_at_start: false
-  val_at_end: false
+  val_at_start: true
+  val_at_end: true
   overlong_filtering: false
   advantage_clip_low: null
   advantage_clip_high: null
-  max_val_samples: 256
+  max_val_samples: 1500
   # Validation rollouts per prompt; k > 1 also reports the pass_k metric.
   # max_val_samples counts PROMPTS: total validation rollouts = max_val_samples * k.
   val_num_generations_per_prompt: 1
@@ -22,7 +22,7 @@ grpo:
   stop_at_validation_metric: null
   # Required when stop_at_validation_metric is set.
   stop_at_validation_threshold: null
-  val_batch_size: 256
+  val_batch_size: ${grpo.max_val_samples}
   seed: 42
   use_dynamic_sampling: false
   dynamic_sampling_max_gen_batches: 10
@@ -44,8 +44,8 @@ grpo:
     minus_baseline: true  # Reinforce++-baseline specific: subtract per-prompt mean baseline
 
 
-    hint_start_string: "\nHint:\n\n"
-    hint_end_string: "\n\nhint end.\n\n"
+    #hint_start_string: "\nHint:\n\n"
+    #hint_end_string: "\n\nhint end.\n\n"
     hint_as_improvement: true  # True -> distil, False -> signal
     kl_coef: 0.05
     kl_clip_min: 0.0
@@ -357,20 +357,20 @@ data:
 
   train:
     dataset_name: LeetCodeExecuteDataset
-  validation:
-    dataset_name: LeetCodeExecuteDataset
+  validation: null
+    #dataset_name: LeetCodeExecuteDataset
 
   default:
 
     use_hint_in_prompt: true
-    hint_key: "right_code"
+    #hint_key: "right_code"
     prefix_tokens_to_insert_hint: [151644, 872]
 
-    hint_start_string: ${grpo.adv_estimator.hint_start_string}
-    hint_end_string: ${grpo.adv_estimator.hint_end_string}
+    #hint_start_string: ${grpo.adv_estimator.hint_start_string}
+    #hint_end_string: ${grpo.adv_estimator.hint_end_string}
     
-    input_key: "question_content"
-    output_key: "outputs"
+    #input_key: "question_content"
+    #output_key: "outputs"
     prompt_file: null
     system_prompt_file: "examples/prompts/exec_code.txt"
     processor: "self_distillation_data_processor"

@@ -1,0 +1,49 @@
+defaults: GRPO_self_reward_1B.yaml
+
+checkpointing:
+  save_period: 67
+
+cluster:
+  gpus_per_node: 4
+  num_nodes: 1
+
+grpo:
+  num_prompts_per_step: 32
+  num_generations_per_prompt: 16
+  max_num_steps: 100
+
+  adv_estimator:
+    name: "grpo"  # Use "reinforce_plus_plus" for Reinforce++ estimator
+    #name: "reward_guided_se7lf_distillation"
+    #hint_as_improvement: true  # distilation with hint if True else signal
+    #kl_coef: 0.05
+    #kl_clip_min: 0.0
+    #kl_clip_max: 10
+
+policy:
+  model_name: "Qwen/Qwen3-1.7B"
+  max_total_sequence_length: 8192
+  
+  dtensor_cfg:
+      _v2: true
+      enabled: true
+      cpu_offload: False
+      sequence_parallel: false
+      activation_checkpointing: false
+      tensor_parallel_size: 1
+      context_parallel_size: 1
+      custom_parallel_plan: null
+
+  generation:
+    stop_token_ids: [151645]
+
+data:
+  default:
+    prefix_tokens_to_insert_hint: [151644, 872] # insert  hint after these sequence of tokens: ex Qwen: "<|im_start|>user"
+    use_hint_in_prompt: true # if false, hints will not be included in the prompt
+
+logger:
+  wandb_enabled: true
+  wandb:
+    project: "SELF-GUIDED"
+    name: "SAMPLING_W_HINT_${data.default.use_hint_in_prompt}/${grpo.adv_estimator.name}/${policy.model_name}"

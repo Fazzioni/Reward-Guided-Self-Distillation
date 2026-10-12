@@ -1034,25 +1034,25 @@ def self_distillation_data_processor(
     hint_token_ids_to_insert = datum_dict.get('hint_tokens')
     
     
-    
-    hint = tokenizer( hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
-    #start_hint = tokenizer( start_hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
-    #end_hint = tokenizer( end_hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
-    
-    
-    if hint_token_ids_to_insert:
-        # preciso localizar a sequencia hint_token_ids_to_insert dentro de tokens_ids, começa do final:
-        start_index = (token_ids.unfold(0, len(hint_token_ids_to_insert), 1) == torch.tensor(hint_token_ids_to_insert)).all(dim=1).nonzero(as_tuple=True)[0]
-        if len(start_index) == 0:
-            raise ValueError("Hint token IDs sequence not found in the tokenized message., hint_token_ids_to_insert: {}".format(hint_token_ids_to_insert))
+    if hint is not None:
+        hint = tokenizer( hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
+        #start_hint = tokenizer( start_hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
+        #end_hint = tokenizer( end_hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
         
-        insert_int_position = start_index[-1].item() + len(hint_token_ids_to_insert)
-        extra_env_info['_START_HINT_POSITION'] = insert_int_position
-        extra_env_info['_END_HINT_POSITION'] = insert_int_position + len(hint)
         
-        token_ids = torch.cat([token_ids[:insert_int_position], hint, token_ids[insert_int_position:]])
-    else:
-        raise ValueError("No hint token IDs to insert found in the tokenized message., hint_token_ids_to_insert: {}".format(hint_token_ids_to_insert))
+        if hint_token_ids_to_insert:
+            # preciso localizar a sequencia hint_token_ids_to_insert dentro de tokens_ids, começa do final:
+            start_index = (token_ids.unfold(0, len(hint_token_ids_to_insert), 1) == torch.tensor(hint_token_ids_to_insert)).all(dim=1).nonzero(as_tuple=True)[0]
+            if len(start_index) == 0:
+                raise ValueError("Hint token IDs sequence not found in the tokenized message., hint_token_ids_to_insert: {}".format(hint_token_ids_to_insert))
+            
+            insert_int_position = start_index[-1].item() + len(hint_token_ids_to_insert)
+            extra_env_info['_START_HINT_POSITION'] = insert_int_position
+            extra_env_info['_END_HINT_POSITION'] = insert_int_position + len(hint)
+            
+            token_ids = torch.cat([token_ids[:insert_int_position], hint, token_ids[insert_int_position:]])
+        else:
+            raise ValueError("No hint token IDs to insert found in the tokenized message., hint_token_ids_to_insert: {}".format(hint_token_ids_to_insert))
 
     
     message_log: LLMMessageLogType = [

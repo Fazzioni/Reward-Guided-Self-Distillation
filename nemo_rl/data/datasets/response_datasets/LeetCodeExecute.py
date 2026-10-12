@@ -51,20 +51,18 @@ class LeetCodeExecuteDataset(RawDataset):
         dataset = load_dataset("RewardGuided/liveruncodebench")
         
         
-        dataset = dataset.filter(lambda x: len(x.get(self.hint_key,'')) < 5000)
-        dataset = dataset.filter(lambda x: len(x.get(self.input_input_key,'')) < 5000)
-        dataset = dataset.filter(lambda x: len(x.get(self.output_key,'')) < 5000)
-        
+        #dataset = dataset.filter(lambda x: len(x.get(self.hint_key,'')) < 5000)
+        dataset = dataset.filter(lambda x: len(x.get(self.input_input_key,'')) < 10_000)
+        dataset = dataset.filter(lambda x: len(x.get(self.output_key,'')) < 10_000)
         
         # format the dataset
         dataset = dataset.map(self.format_data_)
         
 
-        self.val_dataset = dataset['test']
+        self.val_dataset = dataset['test'].map(lambda x: {'prompt_hint':''}) # dont use hint in validation
         self.dataset = dataset['train']
         
         
-
     def format_data_(self, data: dict[str, Any]) -> dict[str, Any]:
         
         user_content = f"{data[self.input_key]}\n\nNow, you need to provide the Output of these inputs:\n{data[self.input_input_key]}"
