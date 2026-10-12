@@ -1,4 +1,4 @@
-defaults: GRPO_self_reward.yaml
+defaults: GRPO_self_reward_1B.yaml
 
 checkpointing:
   save_period: 10
@@ -9,15 +9,16 @@ cluster:
 
 
 grpo:
-  num_prompts_per_step: 2
-  num_generations_per_prompt: 2
+  num_prompts_per_step: 32
+  num_generations_per_prompt: 16
+  max_num_steps: 100
 
   adv_estimator:
     #name: "grpo"  # Use "reinforce_plus_plus" for Reinforce++ estimator
-    name: "reward_guided_self_distillation"  # Use "reinforce_plus_plus" for Reinforce++ estimator
-
-    hint_start_string: "Hint:\n\n"
-    hint_end_string: "hint end.\n\n"
+    name: "reward_guided_self_distillation"
+    
+    hint_start_string: "\nHint:\n\n"
+    hint_end_string: "\n\nHINT END.\n\n"
     hint_as_improvement: true  # distilation with hint if True else signal
     kl_coef: 0.05
     kl_clip_min: 0.0
@@ -26,7 +27,8 @@ grpo:
 
 policy:
   model_name: "Qwen/Qwen3-1.7B"
-
+  max_total_sequence_length: 8192
+  
   dtensor_cfg:
       _v2: true
       enabled: true
@@ -36,3 +38,13 @@ policy:
       tensor_parallel_size: 1
       context_parallel_size: 1
       custom_parallel_plan: null
+
+  generation:
+    stop_token_ids: [151645]
+    
+  
+logger:
+  wandb_enabled: true
+  wandb:
+    project: "SELF-GUIDED"
+    name: "${grpo.adv_estimator.name}/${policy.model_name}"

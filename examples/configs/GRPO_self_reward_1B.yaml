@@ -1,7 +1,7 @@
 # GRPO Algorithm Configuration
 grpo:
-  num_prompts_per_step: 2
-  num_generations_per_prompt: 2
+  num_prompts_per_step: 32
+  num_generations_per_prompt: 16
   max_rollout_turns: 1 # for multi-turn rollouts. Math Environments just have 1 turn (answering the question)
   max_num_epochs: 1
   max_num_steps: 1000000
@@ -44,8 +44,8 @@ grpo:
     minus_baseline: true  # Reinforce++-baseline specific: subtract per-prompt mean baseline
 
 
-    hint_start_string: "Hint:\n\n"
-    hint_end_string: "hint end.\n\n"
+    hint_start_string: "\nHint:\n\n"
+    hint_end_string: "\n\nhint end.\n\n"
     hint_as_improvement: true  # True -> distil, False -> signal
     kl_coef: 0.05
     kl_clip_min: 0.0
@@ -150,11 +150,11 @@ policy:
     tokenizer_kwargs: null # extra kwargs forwarded to tokenizer loading, e.g., {fix_mistral_regex: false}
     use_fastokens: false # opt-in Rust-backed BPE tokenizer for NeMo-RL tokenization; NRL_USE_FASTOKENS overrides this and also sets VLLM_USE_FASTOKENS.
   hf_config_overrides: {}
-  train_global_batch_size: 2
+  train_global_batch_size: ${mul:${grpo.num_prompts_per_step}, ${grpo.num_generations_per_prompt}}
   train_micro_batch_size: 1
   generation_batch_size: 32 # Only used when generating using HF backend
   logprob_batch_size: ${policy.train_micro_batch_size}
-  max_total_sequence_length: 8192
+  max_total_sequence_length: 12000
   precision: "bfloat16"
   logprob_chunk_size: null
   offload_optimizer_for_logprob: false # Only useful for non-colocated generation since colocated generation will always offload optimizer to cuda before refit
@@ -347,6 +347,7 @@ policy:
 
 data:
   max_input_seq_length: ${policy.max_total_sequence_length} # upper bound, real truncation occurs at vllm.max_model_len
+  
   shuffle: true
   num_workers: 1
 
@@ -360,15 +361,18 @@ data:
     dataset_name: LeetCodeExecuteDataset
 
   default:
-    use_hint_in_prompt: true
-    hint_key: right_code
-    
 
+    use_hint_in_prompt: true
+    hint_key: "right_code"
+    prefix_tokens_to_insert_hint: [151644, 872]
+
+    hint_start_string: ${grpo.adv_estimator.hint_start_string}
+    hint_end_string: ${grpo.adv_estimator.hint_end_string}
     
-    input_key: question_content
-    output_key: outputs
+    input_key: "question_content"
+    output_key: "outputs"
     prompt_file: null
-    system_prompt_file: null
+    system_prompt_file: "examples/prompts/exec_code.txt"
     processor: "self_distillation_data_processor"
     #env_name: LeetCodeAnswerVerifier
     env_name: math
@@ -377,6 +381,7 @@ env:
   math:
     num_workers: 1
     math_verify_impl: "LeetCodeAnswerVerifier"
+    verifier_type: "LeetCodeAnswerVerifier"
 
 
 

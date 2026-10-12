@@ -3609,6 +3609,9 @@ def _grpo_train_impl(
                         
 
                     )
+                    advantage_metrics: dict[str, float] = dict(
+                        getattr(adv_estimator, "last_metrics", {})
+                    )
                     del prompt_ids_for_adv
 
                     # Log rewards and advantages information
@@ -3811,6 +3814,7 @@ def _grpo_train_impl(
                         print(f"Skipping aggregation for {k} ({type(v)})")
 
                 metrics.update(rollout_metrics)
+                metrics.update(advantage_metrics)
                 metrics["generation_logger_metrics"] = generation_logger_metrics
                 total_valid_tokens += metrics["global_valid_toks"]
 
@@ -5417,11 +5421,9 @@ def async_grpo_train(
                         generation_logprobs=train_data["generation_logprobs"],
                         sample_mask=train_data["sample_mask"],
                     )
-                    if (
-                        hasattr(adv_estimator, "last_metrics")
-                        and adv_estimator.last_metrics
-                    ):
-                        rollout_metrics.update(adv_estimator.last_metrics)
+                    advantage_metrics: dict[str, float] = dict(
+                        getattr(adv_estimator, "last_metrics", {})
+                    )
                     del prompt_ids_for_adv
 
                     # Log advantages stats
@@ -5709,6 +5711,7 @@ def async_grpo_train(
                     else:
                         metrics[k] = np.sum(v).item()
                 metrics.update(rollout_metrics)
+                metrics.update(advantage_metrics)
                 if generation_logger_metrics is not None:
                     metrics["generation_logger_metrics"] = generation_logger_metrics
                 total_valid_tokens += metrics["global_valid_toks"]

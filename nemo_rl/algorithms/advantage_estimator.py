@@ -698,13 +698,13 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
     
     def format_hint(self, tokenizer, train_data, extra_env_info):
         if self.hint_as_improvement:
-            return self.remove_hint(tokenizer, train_data)
+            return self.remove_hint(tokenizer, train_data, extra_env_info)
         else:
             # hint in extra_env_info
             raise NotImplementedError("format_hint is not implemented for hint_as_improvement=False")
     
     
-    def remove_hint(self, tokenizer, train_data):
+    def remove_hint(self, tokenizer, train_data, extra_env_info):
         """
 
         """
@@ -719,29 +719,34 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
 
         for i in range(len(new_train_data['input_ids'])):
             input_ids = new_train_data['input_ids'][i]
-            #print(tokenizer.batch_decode(input_ids))
+            #print('ANTES DA REMOÇÃO:', tokenizer.batch_decode(input_ids))
             token_mask = new_train_data['token_mask'][i]
             
-            start_index = (input_ids.unfold(0, seq_start.size(-1), 1) == seq_start).all(dim=1).nonzero(as_tuple=True)[0]
-            end_index   = (input_ids.unfold(0, seq_end.size(-1), 1) == seq_end).all(dim=1).nonzero(as_tuple=True)[0]
+            #start_index = (input_ids.unfold(0, seq_start.size(-1), 1) == seq_start).all(dim=1).nonzero(as_tuple=True)[0]
+            #end_index   = (input_ids.unfold(0, seq_end.size(-1), 1) == seq_end).all(dim=1).nonzero(as_tuple=True)[0]
 
-
-            assert start_index.numel() != 0 and end_index.numel() != 0, f"Start or end sequence not found in input_ids {tokenizer.batch_decode(input_ids)}"
+            start_index =  extra_env_info[i]['_START_HINT_POSITION']
+            end_index = extra_env_info[i]['_END_HINT_POSITION']
+        
+            assert start_index is not None and end_index is not None, f"len tokens {input_ids.size(0)}. Start or end sequence not found in input_ids {tokenizer.batch_decode(input_ids)}"
             
-            end_idx = end_index[0]+seq_end.size(-1)
-            tokens_removidos = end_idx - start_index[0]
+            #end_idx = end_index[0]+seq_end.size(-1)
+            end_idx = end_index
+            tokens_removidos = end_idx - start_index
 
             new_train_data['hint_information'].append({
-                'start_index': start_index[0].item(),
-                'count': tokens_removidos.item(),
-                'tokens': input_ids[start_index[0]:end_idx]
+                'start_index': start_index,
+                'count': tokens_removidos,
+                'tokens': input_ids[start_index:end_idx]
             })
 
             # remove a sequencia de tokens entre start_index e end_index e adiciona padding no final
-            new_train_data['input_ids'][i] = torch.cat([input_ids[:start_index[0]], input_ids[end_idx:], torch.full((tokens_removidos,), pad_token_id, dtype=input_ids.dtype)])
+            new_train_data['input_ids'][i] = torch.cat([input_ids[:start_index], input_ids[end_idx:], torch.full((tokens_removidos,), pad_token_id, dtype=input_ids.dtype)])
 
+            #print('\n\nDEPOIS DA REMOÇÃO:', tokenizer.batch_decode(new_train_data['input_ids'][i]))
+            #raise
             # corrige a máscara de atenção correspondente
-            new_train_data['token_mask'][i] = torch.cat([token_mask[:start_index[0]], token_mask[end_idx:], torch.full((tokens_removidos,), 0, dtype=token_mask.dtype)])
+            new_train_data['token_mask'][i] = torch.cat([token_mask[:start_index], token_mask[end_idx:], torch.full((tokens_removidos,), 0, dtype=token_mask.dtype)])
             
         return new_train_data
 

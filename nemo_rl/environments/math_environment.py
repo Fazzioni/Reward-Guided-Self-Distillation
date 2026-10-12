@@ -195,6 +195,9 @@ class LeetCodeAnswerVerifier:
         parsed = self.parse_latex_resposta(solution)
         s1 = parsed.lower().strip()
         s2 = str(ground_truth).lower().strip()
+        
+        print(f"Parsed solution: {parsed}", f"Ground truth: {ground_truth}", f"Comparison result: {s1 == s2}", flush=True)
+        logging.info(f"Parsed solution: {parsed}, Ground truth: {ground_truth}, Comparison result: {s1 == s2}")
         return s1 == s2
 
 

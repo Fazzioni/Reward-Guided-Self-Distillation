@@ -1006,9 +1006,8 @@ def self_distillation_data_processor(
 ) -> DatumSpec:
     """Process a datum dictionary (directly loaded from data/hf_datasets/openmathinstruct2.py) into a DatumSpec for the Reward Model Environment."""
     messages = datum_dict["messages"]
-    problem = messages[-1]["content"]
     
-    extra_env_info = {"ground_truth": messages[1]["content"], 'right_code': datum_dict.get('right_code', None)}
+    extra_env_info = {"ground_truth": datum_dict['ground_truth'], 'right_code': datum_dict.get('right_code', None)}
 
     if task_data_spec.system_prompt:
         if messages[0]["role"] == "system":
@@ -1028,6 +1027,34 @@ def self_distillation_data_processor(
         return_tensors="pt",
         add_special_tokens=False,
     )["input_ids"][0]
+    
+    hint = datum_dict.get('prompt_hint', None)
+    #start_hint = datum_dict.get('start_hint', None)
+    #end_hint = datum_dict.get('end_hint', None)
+    hint_token_ids_to_insert = datum_dict.get('hint_tokens')
+    
+    
+    
+    hint = tokenizer( hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
+    #start_hint = tokenizer( start_hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
+    #end_hint = tokenizer( end_hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
+    
+    
+    if hint_token_ids_to_insert:
+        # preciso localizar a sequencia hint_token_ids_to_insert dentro de tokens_ids, começa do final:
+        start_index = (token_ids.unfold(0, len(hint_token_ids_to_insert), 1) == torch.tensor(hint_token_ids_to_insert)).all(dim=1).nonzero(as_tuple=True)[0]
+        if len(start_index) == 0:
+            raise ValueError("Hint token IDs sequence not found in the tokenized message., hint_token_ids_to_insert: {}".format(hint_token_ids_to_insert))
+        
+        insert_int_position = start_index[-1].item() + len(hint_token_ids_to_insert)
+        extra_env_info['_START_HINT_POSITION'] = insert_int_position
+        extra_env_info['_END_HINT_POSITION'] = insert_int_position + len(hint)
+        
+        token_ids = torch.cat([token_ids[:insert_int_position], hint, token_ids[insert_int_position:]])
+    else:
+        raise ValueError("No hint token IDs to insert found in the tokenized message., hint_token_ids_to_insert: {}".format(hint_token_ids_to_insert))
+
+    
     message_log: LLMMessageLogType = [
         {"role": "user", "content": message, "token_ids": token_ids}
     ]
