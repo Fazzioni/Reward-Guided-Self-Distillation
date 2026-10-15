@@ -46,4 +46,4 @@ logger:
   wandb_enabled: true
   wandb:
     project: "SELF-GUIDED"
-    name: "SAMPLING_W_HINT_${data.default.use_hint_in_prompt}/${grpo.adv_estimator.name}/log_adv_coef_${grpo.adv_estimator.kl_coef}/${policy.model_name}"
+    name: "exp2_SAMPLING_W_HINT_${data.default.use_hint_in_prompt}/${grpo.adv_estimator.name}/log_adv_coef_${grpo.adv_estimator.kl_coef}/${policy.model_name}"

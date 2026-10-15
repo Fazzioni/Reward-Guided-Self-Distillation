@@ -691,8 +691,8 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         self.kl_coef = estimator_config.kl_coef
         self.kl_clip_min = estimator_config.kl_clip_min
         self.kl_clip_max = estimator_config.kl_clip_max
-        self.hint_start_string = estimator_config.hint_start_string
-        self.hint_end_string = estimator_config.hint_end_string
+        #self.hint_start_string = estimator_config.hint_start_string
+        #self.hint_end_string = estimator_config.hint_end_string
         self.hint_as_improvement = estimator_config.hint_as_improvement
     
     
@@ -700,7 +700,6 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         if self.hint_as_improvement:
             return self.remove_hint(tokenizer, train_data, extra_env_info)
         else:
-            # hint in extra_env_info
             raise NotImplementedError("format_hint is not implemented for hint_as_improvement=False")
     
     
@@ -709,44 +708,37 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
 
         """
         pad_token_id = tokenizer.pad_token_id
-        seq_start = tokenizer(self.hint_start_string, return_tensors='pt', add_special_tokens=False)['input_ids']
-        seq_end   = tokenizer(self.hint_end_string, return_tensors='pt', add_special_tokens=False)['input_ids']
-        
         new_train_data = {k: v.clone() if hasattr(v, 'clone') else v.copy() if hasattr(v, 'copy') else v for k, v in train_data.items()}
-    
         new_train_data['hint_information'] = []
         
 
         for i in range(len(new_train_data['input_ids'])):
             input_ids = new_train_data['input_ids'][i]
-            #print('ANTES DA REMOÇÃO:', tokenizer.batch_decode(input_ids))
             token_mask = new_train_data['token_mask'][i]
             
-            #start_index = (input_ids.unfold(0, seq_start.size(-1), 1) == seq_start).all(dim=1).nonzero(as_tuple=True)[0]
-            #end_index   = (input_ids.unfold(0, seq_end.size(-1), 1) == seq_end).all(dim=1).nonzero(as_tuple=True)[0]
-
             start_index =  extra_env_info[i]['_START_HINT_POSITION']
             end_index = extra_env_info[i]['_END_HINT_POSITION']
         
-            assert start_index is not None and end_index is not None, f"len tokens {input_ids.size(0)}. Start or end sequence not found in input_ids {tokenizer.batch_decode(input_ids)}"
+            assert start_index is not None and end_index is not None, f"""
+            length tokens {input_ids.size(0)}. Start or end sequence not found in input_ids {tokenizer.batch_decode(input_ids)}"""
             
-            #end_idx = end_index[0]+seq_end.size(-1)
-            end_idx = end_index
-            tokens_removidos = end_idx - start_index
+            tokens_removidos = end_index - start_index
 
             new_train_data['hint_information'].append({
                 'start_index': start_index,
                 'count': tokens_removidos,
-                'tokens': input_ids[start_index:end_idx]
+                'tokens': input_ids[start_index:end_index]
             })
 
-            # remove a sequencia de tokens entre start_index e end_index e adiciona padding no final
-            new_train_data['input_ids'][i] = torch.cat([input_ids[:start_index], input_ids[end_idx:], torch.full((tokens_removidos,), pad_token_id, dtype=input_ids.dtype)])
+            new_train_data['input_ids'][i] = torch.cat([input_ids[:start_index], 
+                                                        input_ids[end_index:], 
+                                                        torch.full((tokens_removidos,), pad_token_id, dtype=input_ids.dtype)
+                                                        ])
 
-            #print('\n\nDEPOIS DA REMOÇÃO:', tokenizer.batch_decode(new_train_data['input_ids'][i]))
-            #raise
             # corrige a máscara de atenção correspondente
-            new_train_data['token_mask'][i] = torch.cat([token_mask[:start_index], token_mask[end_idx:], torch.full((tokens_removidos,), 0, dtype=token_mask.dtype)])
+            new_train_data['token_mask'][i] = torch.cat([token_mask[:start_index], 
+                                                         token_mask[end_index:], 
+                                                         torch.full((tokens_removidos,), 0, dtype=token_mask.dtype)])
             
         return new_train_data
 
@@ -788,7 +780,7 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         for i in range(len(logprobs_policy)):
             # logprob student with hint - logprob student without hint
             log_prob_advantages[i][mask[i].bool()] -= prev_logprobs_wo_hint[i][prev_logprobs_wo_hint_mask[i].bool()]
-        
+            
         advantages = (log_prob_advantages.clamp(min=self.kl_clip_min, max=self.kl_clip_max) * self.kl_coef) + rewards_adv
         advantages = advantages * mask
         

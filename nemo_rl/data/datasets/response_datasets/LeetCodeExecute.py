@@ -44,16 +44,16 @@ class LeetCodeExecuteDataset(RawDataset):
         self.hint_key = "right_code"
         
         self.task_name = "math"
-        self.use_hint_in_prompt = use_hint_in_prompt        
+        self.use_hint_in_prompt = use_hint_in_prompt
         self.prefix_tokens_to_insert_hint = prefix_tokens_to_insert_hint
 
         # load from huggingface
         dataset = load_dataset("RewardGuided/liveruncodebench")
         
         
-        #dataset = dataset.filter(lambda x: len(x.get(self.hint_key,'')) < 5000)
-        dataset = dataset.filter(lambda x: len(x.get(self.input_input_key,'')) < 10_000)
-        dataset = dataset.filter(lambda x: len(x.get(self.output_key,'')) < 10_000)
+        #dataset = dataset.filter(lambda x: len(x.get(self.hint_key,'')) < 4000)
+        #dataset = dataset.filter(lambda x: len(x.get(self.input_input_key,'')) < 8_000)
+        #dataset = dataset.filter(lambda x: len(x.get(self.output_key,'')) < 8_000)
         
         # format the dataset
         dataset = dataset.map(self.format_data_)
@@ -62,6 +62,9 @@ class LeetCodeExecuteDataset(RawDataset):
         self.val_dataset = dataset['test'].map(lambda x: {'prompt_hint':''}) # dont use hint in validation
         self.dataset = dataset['train']
         
+        print(f"Loaded dataset with {len(self.dataset)} training examples and {len(self.val_dataset)} validation examples.")
+        
+        print(self.val_dataset)
         
     def format_data_(self, data: dict[str, Any]) -> dict[str, Any]:
         
@@ -73,7 +76,9 @@ class LeetCodeExecuteDataset(RawDataset):
                 #{"role": "assistant", "content": data[self.output_key]},
             ],
             "task_name": self.task_name,
-            'ground_truth': data[self.output_key]
+            'ground_truth': data[self.output_key],
+            'prompt_hint': '',
+            'hint_tokens': [],
         }
         
         if self.use_hint_in_prompt:

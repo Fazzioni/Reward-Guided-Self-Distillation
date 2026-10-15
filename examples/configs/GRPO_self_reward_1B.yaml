@@ -395,7 +395,7 @@ logger:
   swanlab_enabled: false # Disable SwanLab logging
   monitor_gpus: false  # If true, will monitor GPU usage and log to wandb and/or tensorboard
   wandb:
-    project: "SELF-GUIDED"
+    project: "SELF-GUIDED-Test"
     name: "${grpo.adv_estimator.name}/${policy.model_name}"
     # Complete Gym payloads can create very large W&B artifacts. Enable only for debugging.
     #log_nemo_gym_full_result_tables: false

@@ -1029,16 +1029,11 @@ def self_distillation_data_processor(
     )["input_ids"][0]
     
     hint = datum_dict.get('prompt_hint', None)
-    #start_hint = datum_dict.get('start_hint', None)
-    #end_hint = datum_dict.get('end_hint', None)
     hint_token_ids_to_insert = datum_dict.get('hint_tokens')
     
     
-    if hint is not None:
+    if hint:
         hint = tokenizer( hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
-        #start_hint = tokenizer( start_hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
-        #end_hint = tokenizer( end_hint, return_tensors="pt", add_special_tokens=False)["input_ids"][0]
-        
         
         if hint_token_ids_to_insert:
             # preciso localizar a sequencia hint_token_ids_to_insert dentro de tokens_ids, começa do final:
@@ -1050,26 +1045,45 @@ def self_distillation_data_processor(
             extra_env_info['_START_HINT_POSITION'] = insert_int_position
             extra_env_info['_END_HINT_POSITION'] = insert_int_position + len(hint)
             
+            
+            #print("extra_env_info['_START_HINT_POSITION']", extra_env_info['_START_HINT_POSITION'])
+            #print("extra_env_info['_END_HINT_POSITION']", extra_env_info['_END_HINT_POSITION'] )
+            #print("\n\n")
             token_ids = torch.cat([token_ids[:insert_int_position], hint, token_ids[insert_int_position:]])
+            
+            #print(tokenizer.decode(token_ids))
+            #print("\n\n")
+            
+            #print(tokenizer.decode(token_ids[insert_int_position:extra_env_info['_END_HINT_POSITION']]))
+            #raise ValueError("Debugging: check hint token insertion")
+            
         else:
             raise ValueError("No hint token IDs to insert found in the tokenized message., hint_token_ids_to_insert: {}".format(hint_token_ids_to_insert))
 
     
-    message_log: LLMMessageLogType = [
-        {"role": "user", "content": message, "token_ids": token_ids}
-    ]
+    message_log: LLMMessageLogType = [ {"role": "user", "content": message, "token_ids": token_ids} ]
 
     length = sum(len(m["token_ids"]) for m in message_log)
 
-    loss_multiplier = 1.0
+    
+    
+    
     if length >= max_seq_length:
-        # make smaller and mask out
-        for chat_message in message_log:
-            chat_message["token_ids"] = chat_message["token_ids"][
-                : min(4, max_seq_length // len(message_log))
-            ]
-        loss_multiplier = 0.0
-
+        print("Warning: message length exceeds max sequence length.: ", token_ids.shape)
+        print(tokenizer.decode(token_ids))
+        print("Message length:", length)
+        
+    loss_multiplier = 1.0
+    #if length >= max_seq_length:
+    #    # make smaller and mask out
+    #    for chat_message in message_log:
+    #        chat_message["token_ids"] = chat_message["token_ids"][
+    #            : min(4, max_seq_length // len(message_log))
+    #        ]
+    #    loss_multiplier = 0.0
+        
+    #print('max_seq_length:', max_seq_length, 'LENGTH:', length, ' LEN NOW', sum(len(m["token_ids"]) for m in message_log),'\n')
+    
     output: DatumSpec = {
         "message_log": message_log,
         "length": length,
