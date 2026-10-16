@@ -781,14 +781,14 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
             # logprob student with hint - logprob student without hint
             log_prob_advantages[i][mask[i].bool()] -= prev_logprobs_wo_hint[i][prev_logprobs_wo_hint_mask[i].bool()]
             
-        advantages = (log_prob_advantages.clamp(min=self.kl_clip_min, max=self.kl_clip_max) * self.kl_coef) + rewards_adv
+        advantages = rewards_adv - (log_prob_advantages.clamp(min=self.kl_clip_min, max=self.kl_clip_max) * self.kl_coef)
         advantages = advantages * mask
         
-        self._compute_metrics(log_prob_advantages, advantages, mask)
+        self._compute_metrics(log_prob_advantages, advantages, mask, rewards_adv)
 
         return advantages
 
-    def _compute_metrics(self, log_prob_advantages, advantages, mask):
+    def _compute_metrics(self, log_prob_advantages, advantages, mask, rewards_adv):
         """Compute Self-Guided Distillation logging metrics."""
         valid_bool = mask.bool()
         distill_valid = torch.masked_select(log_prob_advantages, valid_bool)
@@ -806,7 +806,7 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
 
         adv_mean = adv_valid.mean().item() if adv_valid.numel() > 0 else 0.0
         adv_std = adv_valid.std().item() if adv_valid.numel() > 1 else 0.0
-
+        
         self.last_metrics = {
             "self_guided_distillation/logprob_gap_mean": distill_mean,
             "self_guided_distillation/logprob_gap_std": distill_std,
