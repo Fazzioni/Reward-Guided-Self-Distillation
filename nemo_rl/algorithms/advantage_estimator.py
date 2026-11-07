@@ -797,6 +797,7 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         valid_bool = mask.bool()
         distill_valid = torch.masked_select(log_prob_advantages, valid_bool)
         adv_valid = torch.masked_select(advantages, valid_bool)
+        rew_valid = torch.masked_select(rewards_adv, valid_bool)
         probability_ratio_valid = torch.exp(distill_valid)
 
         distill_mean = distill_valid.mean().item() if distill_valid.numel() > 0 else 0.0
@@ -806,6 +807,8 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
 
         adv_mean = adv_valid.mean().item() if adv_valid.numel() > 0 else 0.0
         adv_std = adv_valid.std().item() if adv_valid.numel() > 1 else 0.0
+        rew_mean = rew_valid.mean().item() if rew_valid.numel() > 0 else 0.0
+        rew_std = rew_valid.std().item() if rew_valid.numel() > 1 else 0.0
         log_prob_student_mean = log_prob_student.mean().item() if log_prob_student.numel() > 0 else 0.0
         log_prob_student_std = log_prob_student.std().item() if log_prob_student.numel() > 1 else 0.0
         log_prob_student_min = log_prob_student.min().item() if log_prob_student.numel() > 0 else 0.0
@@ -826,6 +829,8 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
             "self_guided_distillation/logprob_gap_max": distill_max,
             "self_guided_distillation/adv_mean": adv_mean,
             "self_guided_distillation/adv_std": adv_std,
+            "self_guided_distillation/rew_mean": rew_mean,
+            "self_guided_distillation/rew_std": rew_std,
             "self_guided_distillation/log_prob_student_mean": log_prob_student_mean,
             "self_guided_distillation/log_prob_student_std": log_prob_student_std,
             "self_guided_distillation/log_prob_student_min": log_prob_student_min,
