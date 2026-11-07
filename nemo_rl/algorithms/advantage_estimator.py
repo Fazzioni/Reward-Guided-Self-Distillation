@@ -744,6 +744,7 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
 
 
 
+    @torch.no_grad()
     def compute_advantage(
         self,
         prompt_ids,
@@ -773,8 +774,11 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         assert prev_logprobs_wo_hint_mask is not None, "Reward-Guided Self-Distillation requires prev_logprobs_wo_hint_mask"
 
         log_prob_advantages = logprobs_policy.detach().clone()
+        prev_logprobs_wo_hint = prev_logprobs_wo_hint.detach()
         rewards_adv = torch.ones_like(log_prob_advantages) * rewards.unsqueeze(1)
         
+        log_prob_student = torch.exp(log_prob_advantages[mask.bool()])
+        log_prob_teacher = torch.exp(prev_logprobs_wo_hint[prev_logprobs_wo_hint_mask.bool()])
         
         # calculate log_prob_advantages by subtracting the student logprobs without hint from the policy logprobs
         for i in range(len(logprobs_policy)):
@@ -784,11 +788,11 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         advantages = rewards_adv - (log_prob_advantages.clamp(min=self.kl_clip_min, max=self.kl_clip_max) * self.kl_coef)
         advantages = advantages * mask
         
-        self._compute_metrics(log_prob_advantages, advantages, mask, rewards_adv)
+        self._compute_metrics(log_prob_advantages, advantages, mask, rewards_adv, log_prob_student, log_prob_teacher)
 
         return advantages
 
-    def _compute_metrics(self, log_prob_advantages, advantages, mask, rewards_adv):
+    def _compute_metrics(self, log_prob_advantages, advantages, mask, rewards_adv, log_prob_student, log_prob_teacher):
         """Compute Self-Guided Distillation logging metrics."""
         valid_bool = mask.bool()
         distill_valid = torch.masked_select(log_prob_advantages, valid_bool)
@@ -799,23 +803,35 @@ class RewardGuidedSelfDistillationAdvantageEstimator:
         distill_std = distill_valid.std().item() if distill_valid.numel() > 1 else 0.0
         distill_min = distill_valid.min().item() if distill_valid.numel() > 0 else 0.0
         distill_max = distill_valid.max().item() if distill_valid.numel() > 0 else 0.0
-        probability_ratio_mean = probability_ratio_valid.mean().item() if probability_ratio_valid.numel() > 0 else 0.0
-        probability_ratio_std = probability_ratio_valid.std().item() if probability_ratio_valid.numel() > 1 else 0.0
-        probability_ratio_min = probability_ratio_valid.min().item() if probability_ratio_valid.numel() > 0 else 0.0
-        probability_ratio_max = probability_ratio_valid.max().item() if probability_ratio_valid.numel() > 0 else 0.0
 
         adv_mean = adv_valid.mean().item() if adv_valid.numel() > 0 else 0.0
         adv_std = adv_valid.std().item() if adv_valid.numel() > 1 else 0.0
+        log_prob_student_mean = log_prob_student.mean().item() if log_prob_student.numel() > 0 else 0.0
+        log_prob_student_std = log_prob_student.std().item() if log_prob_student.numel() > 1 else 0.0
+        log_prob_student_min = log_prob_student.min().item() if log_prob_student.numel() > 0 else 0.0
+        log_prob_student_max = log_prob_student.max().item() if log_prob_student.numel() > 0 else 0.0
+        
+        log_prob_teacher_mean = log_prob_teacher.mean().item() if log_prob_teacher.numel() > 0 else 0.0
+        log_prob_teacher_std = log_prob_teacher.std().item() if log_prob_teacher.numel() > 1 else 0.0
+        log_prob_teacher_min = log_prob_teacher.min().item() if log_prob_teacher.numel() > 0 else 0.0
+        log_prob_teacher_max = log_prob_teacher.max().item() if log_prob_teacher.numel() > 0 else 0.0
+        
+        
+        
         
         self.last_metrics = {
             "self_guided_distillation/logprob_gap_mean": distill_mean,
             "self_guided_distillation/logprob_gap_std": distill_std,
             "self_guided_distillation/logprob_gap_min": distill_min,
             "self_guided_distillation/logprob_gap_max": distill_max,
-            "self_guided_distillation/probability_ratio_mean": probability_ratio_mean,
-            "self_guided_distillation/probability_ratio_std": probability_ratio_std,
-            "self_guided_distillation/probability_ratio_min": probability_ratio_min,
-            "self_guided_distillation/probability_ratio_max": probability_ratio_max,
             "self_guided_distillation/adv_mean": adv_mean,
             "self_guided_distillation/adv_std": adv_std,
+            "self_guided_distillation/log_prob_student_mean": log_prob_student_mean,
+            "self_guided_distillation/log_prob_student_std": log_prob_student_std,
+            "self_guided_distillation/log_prob_student_min": log_prob_student_min,
+            "self_guided_distillation/log_prob_student_max": log_prob_student_max,
+            "self_guided_distillation/log_prob_teacher_mean": log_prob_teacher_mean,
+            "self_guided_distillation/log_prob_teacher_std": log_prob_teacher_std,
+            "self_guided_distillation/log_prob_teacher_min": log_prob_teacher_min,
+            "self_guided_distillation/log_prob_teacher_max": log_prob_teacher_max,
         }
